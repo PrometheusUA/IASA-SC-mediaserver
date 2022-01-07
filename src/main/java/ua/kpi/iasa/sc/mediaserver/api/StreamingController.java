@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.BodyInserter;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ua.kpi.iasa.sc.mediaserver.api.dto.ResourceBackDTO;
 import ua.kpi.iasa.sc.mediaserver.security.utility.TokenUtility;
 import ua.kpi.iasa.sc.mediaserver.service.StreamingService;
 import ua.kpi.iasa.sc.resoursesgrpc.*;
@@ -22,6 +23,8 @@ import ua.kpi.iasa.sc.resoursesgrpc.*;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,12 +84,12 @@ public class StreamingController {
     }
 
     @GetMapping
-    public Mono<?> getAll(@RequestHeader String authorization){
+    public ResponseEntity<?> getAll(@RequestHeader String authorization){
         try {
             DecodedJWT decodedJWT = TokenUtility.verifyToken(authorization);
             List<String> roles = decodedJWT.getClaim("roles").asList(String.class);
             if (!roles.contains("Student") && !roles.contains("Teacher"))
-                return Mono.just(ResponseEntity.status(403).body("You have no permission"));
+                return ResponseEntity.status(403).body("You have no permission");
 
             ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 8082)
                     .usePlaintext()
@@ -95,14 +98,23 @@ public class StreamingController {
             ResourceGRPCServiceGrpc.ResourceGRPCServiceBlockingStub stub
                     = ResourceGRPCServiceGrpc.newBlockingStub(channel);
 
-            ResourceGRPCRequestMulti request = ResourceGRPCRequestMulti.newBuilder().build();
+            ResourceGRPCRequestMulti request = ResourceGRPCRequestMulti.getDefaultInstance();
 
             ResourceGRPCResponseMulti resources = stub.getAll(request);
             channel.shutdown();
 
-            return Mono.just(resources);
+            List<ResourceBackDTO> resourcesToSend = new ArrayList<>();
+
+
+            for (ResourceBack r: resources.getResourcesList()){
+                resourcesToSend.add(new ResourceBackDTO(r.getCreatedBy(), r.getId(),
+                        new Timestamp(r.getCreatedAt().getSeconds() * 1000L), r.getAdditionalInfo(), r.getDiscipline(),
+                        r.getLink(), r.getTeacher()));
+            }
+
+            return ResponseEntity.ok(resourcesToSend);
         }catch (Exception e){
-            return Mono.just(ResponseEntity.status(400).body(e.getMessage()));
+            return ResponseEntity.status(400).body(e.getMessage());
         }
     }
 
