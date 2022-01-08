@@ -20,6 +20,7 @@ import ua.kpi.iasa.sc.mediaserver.security.utility.TokenUtility;
 import ua.kpi.iasa.sc.mediaserver.service.StreamingService;
 import ua.kpi.iasa.sc.resoursesgrpc.*;
 
+import javax.json.JsonObject;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,7 +34,7 @@ import java.util.Map;
 @RequestMapping("/video")
 @CrossOrigin(origins = "http://localhost:3000")
 public class StreamingController {
-    private StreamingService service;
+    private final StreamingService service;
 
     public StreamingController(StreamingService service){
         this.service = service;
@@ -119,12 +120,12 @@ public class StreamingController {
     }
 
     @GetMapping("/{id}")
-    public Mono<?> getById(@RequestHeader String authorization, @PathVariable long id){
+    public ResponseEntity<?> getById(@RequestHeader String authorization, @PathVariable long id){
         try {
             DecodedJWT decodedJWT = TokenUtility.verifyToken(authorization);
             List<String> roles = decodedJWT.getClaim("roles").asList(String.class);
             if (!roles.contains("Student") && !roles.contains("Teacher"))
-                return Mono.just(ResponseEntity.status(403).body("You have no permission"));
+                return ResponseEntity.status(403).body("You have no permission");
 
             ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 8082)
                     .usePlaintext()
@@ -140,9 +141,13 @@ public class StreamingController {
             ResourceBack resource = stub.getById(request);
             channel.shutdown();
 
-            return Mono.just(resource);
+            ResourceBackDTO resourceBack = new ResourceBackDTO(resource.getCreatedBy(), resource.getId(),
+                    new Timestamp(resource.getCreatedAt().getSeconds() * 1000L), resource.getAdditionalInfo(), resource.getDiscipline(),
+                    resource.getLink(), resource.getTeacher());
+
+            return ResponseEntity.ok(resourceBack);
         }catch (Exception e){
-            return Mono.just(ResponseEntity.status(400).body(e.getMessage()));
+            return ResponseEntity.status(400).body(e.getMessage());
         }
     }
 }
